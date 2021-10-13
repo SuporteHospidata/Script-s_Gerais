@@ -1,6 +1,6 @@
 --Exclusão de FIAS - Caso não haja relacionamento entre tabelas:
 
- select * from sigh.pacientes where nm_paciente ilike 'IRACI DE OLIVEIRA SANTOS' --Localizar a fia 
+ select * from sigh.pacientes where nm_paciente ilike 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' --Localizar a fia 
 
 
 select data_alta, hora_fim, * from sigh.ficha_amb_int where cod_paciente = 'XXX' and numero_atendimento = 'NN'  -- coletar ID_FIA
@@ -14,7 +14,7 @@ end;
 -------------------------------------------------------------------------------------------------------------------------------------
 -- Alter date e time da fia 
 
- select * from sigh.pacientes where nm_paciente ilike 'IRACI DE OLIVEIRA SANTOS' --Localizar a fia 
+ select * from sigh.pacientes where nm_paciente ilike 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' --Localizar a fia 
 
 
 select data_alta, hora_fim, * from sigh.ficha_amb_int where cod_paciente = 'XXX' and numero_atendimento = 'NN'  -- coletar
