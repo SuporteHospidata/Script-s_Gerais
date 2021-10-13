@@ -1,4 +1,4 @@
--- sistema com o leito ocupado, porém sem paciente.
+-- Aplicação com o leito ocupado, porém sem paciente.
 
 
 begin;
@@ -17,3 +17,6 @@ where nm_quarto ilike '12') -- Setar o Quarto
 and cod_sit_leito = 2; --2 = passar para livre 1 =passar para ocpuado 
 
 end;
+
+
+

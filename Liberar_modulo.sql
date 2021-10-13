@@ -21,4 +21,4 @@ and descricao ilike '%DIAGNOSE/TERAPIA%' -- Exemplo de um módulo
 
 
 
---Caso você queira liberar outro modulo basta alterar o caminho após o LIke '%[Caminho d]%'
+--Caso você queira liberar outro modulo basta alterar o caminho após o LIke '%[Caminho]%'
