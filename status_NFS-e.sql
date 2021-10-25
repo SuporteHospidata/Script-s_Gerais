@@ -16,7 +16,7 @@ select status_rps_nfse, * from sigh.ctas_receber_pagar_itens where cod_cta_receb
 
 
 
---Case com as opções de status
+--Case com as opções de status --só usar as opções C, A e E.
 
 CASE
             
