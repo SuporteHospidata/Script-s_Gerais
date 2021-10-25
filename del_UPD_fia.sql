@@ -11,7 +11,7 @@ delete sigh.ficha_amb_int  where id_fia = 'XXXXXX' --Exclusão da fia
 end;
 
 
--------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------------------
 -- Alter date e time da fia 
 
  select * from sigh.pacientes where nm_paciente ilike 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' --Localizar a fia 
