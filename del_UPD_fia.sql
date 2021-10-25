@@ -7,7 +7,7 @@ select data_alta, hora_fim, * from sigh.ficha_amb_int where cod_paciente = 'XXX'
 
 
 begin;
-update sigh.ficha_amb_int set data_alta = '2018-12-02'  where id_fia = 'XXXXXX' --Exclusão da fia
+delete sigh.ficha_amb_int  where id_fia = 'XXXXXX' --Exclusão da fia
 end;
 
 
