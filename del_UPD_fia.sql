@@ -7,7 +7,7 @@ select data_alta, hora_fim, * from sigh.ficha_amb_int where cod_paciente = 'XXX'
 
 
 begin;
-delete from sigh.ficha_amb_int  where id_fia = 'XXXXXX' --Exclusão da fia
+delete from sigh.ficha_amb_int  where id_fia = 'XXXXXX' --Exclusão da fia--
 end;
 
 
