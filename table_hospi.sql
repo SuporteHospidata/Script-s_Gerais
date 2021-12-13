@@ -15,38 +15,32 @@ commit;
 
 -- Caso seja multi-empresa, tirar 'limit 1' do select--
 
+
 begin;
 update IPE.hospitais
 set 
-nome = 'nome da instituicao',
-cgc_cnpj = 'CNPJ DA INSTITUICAO',
-codigo_hosp = 'CODIGO DO CLIENTE'
+nm_hospital = 'nome da instituicao',
+cnpj = 'CNPJ DA INSTITUICAO',
+numero_hospital= 'CODIGO DO CLIENTE'
 where id_hospital = 'ID DA TABELA ';
 commit;
 
-begin;
-update AIH.hospitais
-set 
-nome = 'nome da instituicao',
-cgc_cnpj = 'CNPJ DA INSTITUICAO',
-codigo_hosp = 'CODIGO DO CLIENTE'
-where id_hospital = 'ID DA TABELA ';
-commit;
 
 begin;
 update AIHU.hospitais
 set 
-nome = 'nome da instituicao',
-cgc_cnpj = 'CNPJ DA INSTITUICAO',
-codigo_hosp = 'CODIGO DO CLIENTE'
+nm_hospital = 'nome da instituicao',
+cnpj = 'CNPJ DA INSTITUICAO',
+codigo_hospital = 'CODIGO DO CLIENTE'
 where id_hospital = 'ID DA TABELA ';
 commit;
+
 
 begin;
 update APAC.hospitais
 set 
-nome = 'nome da instituicao',
-cgc_cnpj = 'CNPJ DA INSTITUICAO',
-codigo_hosp = 'CODIGO DO CLIENTE'
+nm_hospital = 'nome da instituicao',
+cnpj = 'CNPJ DA INSTITUICAO',
+codigo_hospital = 'CODIGO DO CLIENTE'
 where id_hospital = 'ID DA TABELA ';
 commit;
