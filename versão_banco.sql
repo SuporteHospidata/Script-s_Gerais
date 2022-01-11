@@ -8,4 +8,4 @@ select versao, releases from conf.parametros_conf;
 
 update conf.parametros_conf
 set releases = XX --setar a versão, ultimo 2 numeros
-where id_parametros_conf;
+where id_parametros_conf = 5;
