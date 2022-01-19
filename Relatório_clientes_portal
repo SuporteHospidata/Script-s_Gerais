@@ -1,0 +1,9 @@
+--Consultar clientes no portal
+
+select codigo_cliente AS "Código Cliente",
+nm_cliente AS "Nome Instituição",
+cnpj AS "Cnpj da Instituição",
+contato AS "Responsável pelo sistema",
+e_mail AS "Email Responsável"
+from gerente.clientes
+where portal = 't';
