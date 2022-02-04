@@ -1,3 +1,5 @@
+--Backup e compactação do mesmo é necessário ter os executaveis 7z e 7zFM que estão localizados nesta pasta : \\HDSERVER13\público\willian\backup bat
+
 set PGPASSWORD=s@tt30hd2013
 set HOST=192.168.0.100
 set PORT=5432
