@@ -1,3 +1,7 @@
+
+
+
+
 --Exclusão de FIAS - Caso não haja relacionamento entre tabelas:
 
  select * from sigh.pacientes where nm_paciente ilike 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' --Localizar a fia 
