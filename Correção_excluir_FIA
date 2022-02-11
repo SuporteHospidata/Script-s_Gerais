@@ -1,0 +1,572 @@
+--Correção de exclusão de FIA
+
+-- Quando o cliente não consegue excluir as fias rodar esse script
+
+CREATE OR REPLACE FUNCTION sigh.f_controle_logs_ficha_amb_int()
+  RETURNS trigger AS
+$BODY$
+declare
+	ri record; 
+	oldValue text;
+	newValue text;
+	isColumnSignificant boolean;
+	isColumnFK boolean;
+	isValueModified boolean;
+	lColumnName text;
+	lCodObjeto integer;
+	lNmPaciente text;
+begin
+
+	if (TG_OP = 'DELETE') then
+		if not coalesce((select	
+					case 
+						when old.tipo_atend = 'AMB' then habilita_controle_log_fia_amb
+						when old.tipo_atend = 'INT' then habilita_controle_log_fia_int
+						when old.tipo_atend = 'EXT' then habilita_controle_log_fia_ext
+					end
+				from	sigh.params_recepcao
+				where	cod_hospital = old.cod_hospital),false) then
+			return old;
+		end if;
+	else
+		if not coalesce((select	
+					case 
+						when new.tipo_atend = 'AMB' then habilita_controle_log_fia_amb
+						when new.tipo_atend = 'INT' then habilita_controle_log_fia_int
+						when new.tipo_atend = 'EXT' then habilita_controle_log_fia_ext
+					end
+				from	sigh.params_recepcao
+				where	cod_hospital = new.cod_hospital),false) then
+			return new;
+		end if;
+	end if;
+	if TG_OP = 'INSERT' then
+		insert into util.controles_logs
+			(
+				cod_aplicacao,
+				tp_tabela,
+				nm_tabela,
+				campo,
+				informacao_adicional,
+				inf_antes,
+				inf_depois,
+				acao_realizada,
+				username
+			)
+		values
+			(
+				(select id_aplicacao from conf.aplicacoes where sigla = 'SIGH' limit 1),
+				9,
+				'Fia',
+				'',
+				'Atend: ' || cast(new.numero_atendimento as text) || ' Pac: ' || (select nm_paciente from sigh.pacientes where id_paciente = new.cod_paciente),
+				'',
+				'',
+				'INCLUSÃO',
+				(select upper(current_user))
+			);
+
+	elsif TG_OP = 'UPDATE' then
+		lNmPaciente = (select nm_paciente from sigh.pacientes where id_paciente = new.cod_paciente);
+		lCodObjeto = 
+		(
+			select 
+				id_objeto 
+			from 
+				conf.objetos 
+			where 
+				tabela = 
+					(
+						select 
+							id_tabela 
+						from 
+							conf.tabelas 
+						where 
+							nm_tabela = 'FICHA_AMB_INT' 
+						and schemaname = 'SIGH'
+					) 
+			and nm_objeto ilike concat('FRMMNTFIA' || new.tipo_atend) 
+			and cod_aplicacao = 
+				(
+					select 
+						id_aplicacao 
+					from 
+						conf.aplicacoes 
+					where 
+						sigla = 'SIGH' 
+					limit 1
+				)
+			limit 1
+		);
+		FOR ri IN
+		    --Busca as colunas correspondentes da tabela que sofreu a alteração.
+		    SELECT ordinal_position, column_name, data_type
+		    FROM information_schema.columns
+		    where table_schema = quote_ident(TG_TABLE_SCHEMA)
+		    AND table_name = quote_ident(TG_TABLE_NAME)
+		    ORDER BY ordinal_position
+		loop
+		    -- Copia os respectivos valores para as variáveis correspondentes.
+		    -- NEW value
+		    EXECUTE 'SELECT ($1).' || ri.column_name || '::text' INTO newValue USING NEW;
+		    -- OLD value
+		    EXECUTE 'SELECT ($1).' || ri.column_name || '::text' INTO oldValue USING OLD;
+
+		    isColumnSignificant := (position( '_x_' in ri.column_name ) < 1) AND (substr(ri.column_name,1,3) <> 'id_') AND (ri.column_name <> 'cod_usuario_criacao') AND (ri.column_name <> 'data_hora_criacao') AND (ri.column_name <> 'cod_usuario_atualizacao') AND (ri.column_name <> 'data_hora_atualizacao') AND (ri.column_name <> 'cod_usuario_exclusao') AND (ri.column_name <> 'data_hora_exclusao') AND (ri.column_name <> 'cod_usuario_editando') AND (ri.column_name <> 'cod_func_atualizou');
+		   
+		    IF isColumnSignificant THEN
+				isValueModified := coalesce(oldValue, '') <> coalesce(newValue, '');  -- Se houve alteração de valor, então realiza a inserção no log.
+				IF isValueModified THEN
+					isColumnFK = (substr(ri.column_name,1,4) = 'cod_') or (ri.column_name = 'tipo_atend_tiss') or (ri.column_name = 'tipo_consulta_tiss') or (ri.column_name = 'indicador_acidente_tiss') or (substr(ri.column_name,1,10) = 'diaria_cod') or ((substr(ri.column_name,1,10) = 'diaria_dif') and  not (position('_valor'in ri.column_name) > 0));
+					if isColumnFK then
+						if ri.column_name = 'cod_convenio' then
+							select into lColumnName, oldValue, newValue
+							'CONVÊNIO', (select nm_convenio from sigh.convenios where id_convenio = coalesce(cast(oldValue as integer),0)), (select nm_convenio from sigh.convenios where id_convenio = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_categoria' then 	
+							select into lColumnName, oldValue, newValue
+							'CATEGORIA', (select nm_categoria from sigh.categorias where id_categoria = coalesce(cast(oldValue as integer),0)), (select nm_categoria from sigh.categorias where id_categoria = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_leito' then 	
+							select into lColumnName, oldValue, newValue
+							'LEITO', (select nm_leito from sigh.leitos where id_leito = coalesce(cast(oldValue as integer),0)), (select nm_leito from sigh.leitos where id_leito = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_unidade' then 	
+							select into lColumnName, oldValue, newValue
+							'UNIDADE', (select nm_unidade from sigh.unidades where id_unidade = coalesce(cast(oldValue as integer),0)), (select nm_unidade from sigh.unidades where id_unidade = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_medico_solicitante' then 	
+							select into lColumnName, oldValue, newValue
+							'MÉDICO SOLICITANTE', (select nm_prestador from sigh.prestadores where id_prestador = coalesce(cast(oldValue as integer),0)), (select nm_prestador from sigh.prestadores where id_prestador = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_medico' then 	
+							select into lColumnName, oldValue, newValue
+							'MÉDICO', (select nm_prestador from sigh.prestadores where id_prestador = coalesce(cast(oldValue as integer),0)), (select nm_prestador from sigh.prestadores where id_prestador = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_especialidade' then 	
+							select into lColumnName, oldValue, newValue
+							'ESPECIALIDADE DO ATENDIMENTO', (select nm_especialidade from sigh.especialidades_principais where id_esp_principal = coalesce(cast(oldValue as integer),0)), (select nm_especialidade from sigh.especialidades_principais where id_esp_principal = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_setor_posto' then 	
+							select into lColumnName, oldValue, newValue
+							'SETOR/POSTO', (select nm_setor_posto from sigh.setores_postos where id_setor_posto = coalesce(cast(oldValue as integer),0)), (select nm_setor_posto from sigh.setores_postos where id_setor_posto = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_sala' then 	
+							select into lColumnName, oldValue, newValue
+							'SALA DE ATENDIMENTO', (select nm_sala_atend from sigh.salas_atendimentos where id_sala_atend = coalesce(cast(oldValue as integer),0)), (select nm_sala_atend from sigh.salas_atendimentos where id_sala_atend = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_procedencia' then 	
+							select into lColumnName, oldValue, newValue
+							'PROCEDÊNCIA', (select descr_procedencia from sigh.procedencias where id_procedencia = coalesce(cast(oldValue as integer),0)), (select descr_procedencia from sigh.procedencias where id_procedencia = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'tipo_atend_tiss' then 	
+							select into lColumnName, oldValue, newValue
+							'TIPO ATEND. TISS', 
+							case
+								when oldValue = '1' then 'REMOÇÃO'
+								when oldValue = '2' then 'PEQUENA CIRURGIA'
+								when oldValue = '3' then 'OUTRAS TERAPIAS'
+								when oldValue = '4' then 'CONSULTA'
+								when oldValue = '5' then 'EXAME AMB'
+								when oldValue = '6' then 'ATEND DOMICILIAR'
+								when oldValue = '7' then 'INTERNAÇÃO'
+								when oldValue = '8' then 'QUIMIOTERAPIA'
+								when oldValue = '9' then 'RADIOTERAPIA'
+								when oldValue = '10' then 'TERAP RENAL (TRS)'
+								when oldValue = '11' then 'PRONTO SOCORRO'
+								when oldValue = '13' then 'PEQUENO ATEND'
+								when oldValue = '14' then 'SAÚDE OCUP-ADMIS'
+								when oldValue = '15' then 'SAÚDE OCUP-DEMIS'
+								when oldValue = '16' then 'SAÚDE OCUP-PERIO'
+								when oldValue = '17' then 'SAÚDE OCUP-RETORN'
+								when oldValue = '18' then 'SAÚDE OCUP-MUDANÇ'
+								when oldValue = '19' then 'SAÚDE OCUP-PROMO'
+								when oldValue = '20' then 'SAÚDE OCUP-BENEF'
+								when oldValue = '21' then 'SAÚDE OCUP-ASSIST'
+								when oldValue = '22' then 'TELESSAÚDE'
+							end
+							, case
+								when newValue = '1' then 'REMOÇÃO'
+								when newValue = '2' then 'PEQUENA CIRURGIA'
+								when newValue = '3' then 'OUTRAS TERAPIAS'
+								when newValue = '4' then 'CONSULTA'
+								when newValue = '5' then 'EXAME AMB'
+								when newValue = '6' then 'ATEND DOMICILIAR'
+								when newValue = '7' then 'INTERNAÇÃO'
+								when newValue = '8' then 'QUIMIOTERAPIA'
+								when newValue = '9' then 'RADIOTERAPIA'
+								when newValue = '10' then 'TERAP RENAL (TRS)'
+								when newValue = '11' then 'PRONTO SOCORRO'
+								when newValue = '13' then 'PEQUENO ATEND'
+								when newValue = '14' then 'SAÚDE OCUP-ADMIS'
+								when newValue = '15' then 'SAÚDE OCUP-DEMIS'
+								when newValue = '16' then 'SAÚDE OCUP-PERIO'
+								when newValue = '17' then 'SAÚDE OCUP-RETORN'
+								when newValue = '18' then 'SAÚDE OCUP-MUDANÇ'
+								when newValue = '19' then 'SAÚDE OCUP-PROMO'
+								when newValue = '20' then 'SAÚDE OCUP-BENEF'
+								when newValue = '21' then 'SAÚDE OCUP-ASSIST'
+								when newValue = '22' then 'TELESSAÚDE'
+							end;
+						elsif ri.column_name = 'tipo_consulta_tiss' then 	
+							select into lColumnName, oldValue, newValue
+							'TIPO CONSULTA TISS', 
+							case
+								when oldValue = '1' then 'PRIMEIRA CONSULTA'
+								when oldValue = '2' then 'RETORNO'
+								when oldValue = '3' then 'PRÉ-NATAL'
+								when oldValue = '4' then 'POR ENCAMINHAMENTO'
+							end
+							, case
+								when newValue = '1' then 'PRIMEIRA CONSULTA'
+								when newValue = '2' then 'RETORNO'
+								when newValue = '3' then 'PRÉ-NATAL'
+								when newValue = '4' then 'POR ENCAMINHAMENTO'
+							end;
+						elsif ri.column_name = 'cod_forma_chegada' then 	
+							select into lColumnName, oldValue, newValue
+							'FORMA CHEGADA', (select descr_forma_chegada from sigh.formas_chegadas where id_forma_chegada = coalesce(cast(oldValue as integer),0)), (select descr_forma_chegada from sigh.formas_chegadas where id_forma_chegada = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_situacao_entrada' then 	
+							select into lColumnName, oldValue, newValue
+							'SITUAÇÃO ENTRADA', (select descr_situacao_entrada from sigh.situacoes_entradas where id_situacao_entrada = coalesce(cast(oldValue as integer),0)), (select descr_situacao_entrada from sigh.situacoes_entradas where id_situacao_entrada = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_encaminhamento' then 	
+							select into lColumnName, oldValue, newValue
+							'ENCAMINHAMENTO', (select descr_encaminhamento from sigh.encaminhamentos where id_encaminhamento = coalesce(cast(oldValue as integer),0)), (select descr_encaminhamento from sigh.encaminhamentos where id_encaminhamento = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'indicador_acidente_tiss' then 	
+							select into lColumnName, oldValue, newValue
+							'INDICAÇÃO ACIDENTE TISS', 
+							case
+								when oldValue = '0' then 'TRABALHO'
+								when oldValue = '1' then 'TRÂNSITO'
+								when oldValue = '2' then 'OUTROS ACIDENTES'
+								when oldValue = '9' then 'NÃO ACIDENTES'
+							end
+							, case
+								when newValue = '0' then 'TRABALHO'
+								when newValue = '1' then 'TRÂNSITO'
+								when newValue = '2' then 'OUTROS ACIDENTES'
+								when newValue = '9' then 'NÃO ACIDENTES'
+							end;
+						elsif ri.column_name = 'cod_situacao_atendimento' then 	
+							select into lColumnName, oldValue, newValue
+							'SITUAÇÃO ATEND.', (select descr_situacao_atendimento from sigh.situacoes_atendimentos where id_situacao_atendimento = coalesce(cast(oldValue as integer),0)), (select descr_situacao_atendimento from sigh.situacoes_atendimentos where id_situacao_atendimento = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_medico_aux' then 	
+							select into lColumnName, oldValue, newValue
+							'MÉDICO AUXILIAR', (select nm_prestador from sigh.prestadores where id_prestador = coalesce(cast(oldValue as integer),0)), (select nm_prestador from sigh.prestadores where id_prestador = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_medico_anest' then 	
+							select into lColumnName, oldValue, newValue
+							'MÉDICO ANESTESISTA', (select nm_prestador from sigh.prestadores where id_prestador = coalesce(cast(oldValue as integer),0)), (select nm_prestador from sigh.prestadores where id_prestador = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_centro_custo' then 	
+							select into lColumnName, oldValue, newValue
+							'CENTRO DE CUSTO', (select descr_cc from sigh.centros_custos where id_centro_custo = coalesce(cast(oldValue as integer),0)), (select descr_cc from sigh.centros_custos where id_centro_custo = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_func_negociador' then 	
+							select into lColumnName, oldValue, newValue
+							'NEGOCIADOR', (select nm_funcionario from sigh.funcionarios where id_funcionario = coalesce(cast(oldValue as integer),0)), (select nm_funcionario from sigh.funcionarios where id_funcionario = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_subespecialidade' then 	
+							select into lColumnName, oldValue, newValue
+							'ESPECIALIDADE MÉDICA', (select nm_subespecialidade from sigh.subespecialidades where id_subespecialidade = coalesce(cast(oldValue as integer),0)), (select nm_subespecialidade from sigh.subespecialidades where id_subespecialidade = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_equipe_medica' then 	
+							select into lColumnName, oldValue, newValue
+							'EQUIPE MÉDICA', (select nm_cad_equip from sigh.equipes where id_cad_equip = coalesce(cast(oldValue as integer),0)), (select nm_cad_equip from sigh.equipes where id_cad_equip = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_motivo_isolamento' then 	
+							select into lColumnName, oldValue, newValue
+							'MOTIVO ISOLAMENTO', (select descricao_motivo_isolamento from sigh.motivos_isolamento where id_motivo_isolamento = coalesce(cast(oldValue as integer),0)), (select descricao_motivo_isolamento from sigh.motivos_isolamento where id_motivo_isolamento = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_tp_sus' then 	
+							select into lColumnName, oldValue, newValue
+							'TIPO SUS', (select descr_tp_sus from sigh.tipos_sus where id_tp_sus = coalesce(cast(oldValue as integer),0)), (select descr_tp_sus from sigh.tipos_sus where id_tp_sus = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_grupo_sus' then 	
+							select into lColumnName, oldValue, newValue
+							'GRUPO SUS', (select nm_grupo from sigh.grupos_sus where id_grupo_sus = coalesce(cast(oldValue as integer),0)), (select nm_grupo from sigh.grupos_sus where id_grupo_sus = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_motivo_desistencia' then 	
+							select into lColumnName, oldValue, newValue
+							'MOTIVO CANCELAMENTO', (select descr_motivo_cancelamento from sigh.motivos_cancelamentos where id_motivo_cancelamento = coalesce(cast(oldValue as integer),0)), (select descr_motivo_cancelamento from sigh.motivos_cancelamentos where id_motivo_cancelamento = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_grau_parentesco' then 	
+							select into lColumnName, oldValue, newValue
+							'GRAU PARENTESCO RESP.', (select descr_grau_parentesco from sigh.graus_parentescos where id_grau_parentesco = coalesce(cast(oldValue as integer),0)), (select descr_grau_parentesco from sigh.graus_parentescos where id_grau_parentesco = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_cbo_resp' then 	
+							select into lColumnName, oldValue, newValue
+							'PROFISSÃO RESP.', (select descr_ocupacao from sigh.ocupacoes where id_ocupacao = coalesce(cast(oldValue as integer),0)), (select descr_ocupacao from sigh.ocupacoes where id_ocupacao = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_tp_documento' then 	
+							select into lColumnName, oldValue, newValue
+							'TIPO DOC. RESP.', (select nm_tp_documento from sigh.tipos_documentos where id_tp_documento = coalesce(cast(oldValue as integer),0)), (select nm_tp_documento from sigh.tipos_documentos where id_tp_documento = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_tp_documento_2' then 	
+							select into lColumnName, oldValue, newValue
+							'TIPO DOC. RESP. 2', (select nm_tp_documento from sigh.tipos_documentos where id_tp_documento = coalesce(cast(oldValue as integer),0)), (select nm_tp_documento from sigh.tipos_documentos where id_tp_documento = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_tp_endereco' then 	
+							select into lColumnName, oldValue, newValue
+							'TIPO ENDEREÇO', (select tipo_end from sigh.tipos_enderecos where id_tp_endereco = coalesce(cast(oldValue as integer),0)), (select tipo_end from sigh.tipos_enderecos where id_tp_endereco = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'diaria_codigo_pac' then 	
+							select into lColumnName, oldValue, newValue
+							'DIÁRIA NORMAL PAC.', (select descr_servico from sigh.servicos where id_servico = coalesce(cast(oldValue as integer),0)), (select descr_servico from sigh.servicos where id_servico = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'diaria_codigo_acomp' then 	
+							select into lColumnName, oldValue, newValue
+							'DIÁRIA NORMAL ACOMP.', (select descr_servico from sigh.servicos where id_servico = coalesce(cast(oldValue as integer),0)), (select descr_servico from sigh.servicos where id_servico = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'diaria_diferenca_pac' then 	
+							select into lColumnName, oldValue, newValue
+							'DIÁRIA DIFERENÇA PAC.', (select descr_servico from sigh.servicos where id_servico = coalesce(cast(oldValue as integer),0)), (select descr_servico from sigh.servicos where id_servico = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'diaria_diferenca_acomp' then 	
+							select into lColumnName, oldValue, newValue
+							'DIÁRIA DIFERENÇA ACOMP.', (select descr_servico from sigh.servicos where id_servico = coalesce(cast(oldValue as integer),0)), (select descr_servico from sigh.servicos where id_servico = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_tp_deposito' then 	
+							select into lColumnName, oldValue, newValue
+							'TIPO DEPÓSITO', (select nm_tp_deposito from sigh.tipos_depositos where id_tp_deposito = coalesce(cast(oldValue as integer),0)), (select nm_tp_deposito from sigh.tipos_depositos where id_tp_deposito = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_mot_alta' then 	
+							select into lColumnName, oldValue, newValue
+							'MOTIVO ALTA', (select descr_mot_alta from sigh.motivos_altas where id_mot_alta = coalesce(cast(oldValue as integer),0)), (select descr_mot_alta from sigh.motivos_altas where id_mot_alta = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'indicador_acidente_tiss' then 	
+							select into lColumnName, oldValue, newValue
+							'INDICAÇÃO ACIDENTE TISS', 
+							case
+								when oldValue = '1' then 'RETORNO'
+								when oldValue = '2' then 'RETORNO SADT'
+								when oldValue = '3' then 'REFERÊNCIA'
+								when oldValue = '4' then 'INTERNAÇÃO'
+								when oldValue = '5' then 'ALTA'
+								when oldValue = '6' then 'ÓBITO'
+							end
+							, case
+								when newValue = '1' then 'RETORNO'
+								when newValue = '2' then 'RETORNO SADT'
+								when newValue = '3' then 'REFERÊNCIA'
+								when newValue = '4' then 'INTERNAÇÃO'
+								when newValue = '5' then 'ALTA'
+								when newValue = '6' then 'ÓBITO'
+							end;
+						elsif ri.column_name = 'cod_mot_alta' then 	
+							select into lColumnName, oldValue, newValue
+							'MOTIVO ALTA', (select descr_mot_alta from sigh.motivos_altas where id_mot_alta = coalesce(cast(oldValue as integer),0)), (select descr_mot_alta from sigh.motivos_altas where id_mot_alta = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_met_contraceptivo' then 	
+							select into lColumnName, oldValue, newValue
+							'MÉTODO CONTRACEPTIVO', (select descr_metodo from aihu.metodos_contraceptivos where id_met_contraceptivo = coalesce(cast(oldValue as integer),0)), (select descr_metodo from aihu.metodos_contraceptivos where id_met_contraceptivo = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_logradouro' then 	
+							select into lColumnName, oldValue, newValue
+							'LOGRADOURO', (select logradouro from endereco_sigh.logradouros where id_logradouro = coalesce(cast(oldValue as integer),0)), (select logradouro from endereco_sigh.logradouros where id_logradouro = coalesce(cast(newValue as integer),0));
+						elsif ri.column_name = 'cod_cbo_solicitante' then 	
+							select into lColumnName, oldValue, newValue
+							'PROFISSÃO SOLICITANTE', (select descr_cbo from aihu.cbos where id_cbo = coalesce(cast(oldValue as integer),0)), (select descr_cbo from aihu.cbos where id_cbo = coalesce(cast(newValue as integer),0));
+						else
+							lColumnName = ri.column_name;
+						end if;
+					else
+						lColumnName = 
+							(
+								coalesce(
+										(select 
+											label										
+										from conf.campos_objetos 
+										where cod_objeto = lCodObjeto 
+										and campo ilike ri.column_name 
+										and trim(label) <> ''
+										limit 1)
+										,case 
+											when ri.column_name = 'cod_funcionario' then 'FUNCIONÁRIO (CÓDIGO)'
+											when ri.column_name = 'tipo_atend' then 'TIPO DE ATENDIMENTO'
+											when ri.column_name = 'crm' then 'CRM'
+											when ri.column_name = 'dia_int' then 'DIAS INTERNADO'
+											when ri.column_name = 'laudo_impresso' then 'LAUDO IMPRESSO'
+											when ri.column_name = 'motivo_internacao' then 'MOTIVO INTERNAÇÃO'
+											when ri.column_name = 'exame_data_internacao' then 'DATA INTERNAÇÃO'
+											when ri.column_name = 'exame_pre_diagnostico' then 'EXAME PRÉ DIAGNÓSTICO'
+											when ri.column_name = 'descricao_cirurgica' then 'DESCRIÇÃO CIRÚRGICA'
+											when ri.column_name = 'diagnostico_pre_operatorio' then 'DIAGNÓSTICO PRÉ OPERATÓRIO'
+											when ri.column_name = 'evolucao_pos_operatoria' then 'EVOLUÇÃO PÓS OPERATÓRIO'
+											when ri.column_name = 'cod_bairro' then 'BAIRRO (CÓDIGO)'
+											when ri.column_name = 'cod_municipio' then 'MUNICÍPIO (CÓDIGO)'
+											when ri.column_name = 'cod_uf' then 'UF (CÓDIGO)'
+											when ri.column_name = 'cod_cep' then 'CEP (CÓDIGO)'
+											when ri.column_name = 'cod_funcionario_alta' then 'FUNCIONÁRIO ALTA (CÓDIGO)'
+											when ri.column_name = 'dias_utilizados' then 'DIAS UTILIZADOS'
+											when ri.column_name = 'diferenca_dias' then 'DIFERENÇA DE DIAS'
+											when ri.column_name = 'cod_tp_endereco' then 'TIPO ENDEREÇO (CÓDIGO)'
+											when ri.column_name = 'cod_func_atualizou' then 'FUNCIONÁRIO ATUALIZOU (CÓDIGO)'
+											when ri.column_name = 'referencia' then 'REFERÊNCIA'
+											when ri.column_name = 'data_ultima_troca_leito' then 'DATA ÚLTIMA TROCA LEITO'
+											when ri.column_name = 'cod_tp_sus' then 'TIPO SUS (CÓDIGO)'
+											when ri.column_name = 'cod_grupo_sus' then 'GRUPO SUS (CÓDIGO)'
+											when ri.column_name = 'cod_esp_sus' then 'ESPECIALIDADE SUS (CÓDIGO)'
+											when ri.column_name = 'url_laudo_scola' then 'URL LAUDO'
+											when ri.column_name = 'em_gestacao' then 'EM GESTAÇÃO'
+											when ri.column_name = 'complic_puerperio' then 'COMPLIC. PUERPÉRIO'
+											when ri.column_name = 'baixo_peso' then 'BAIXO PESO'
+											when ri.column_name = 'atend_rn_sala_parto' then 'ATEND. AO RN NA SALA DE PARTO'
+											when ri.column_name = 'complic_neonatal' then 'COMPLIC. NEONATAL'
+											when ri.column_name = 'transt_mat_gravidez' then 'TRANST. MATERNO RELAC. À GRAVIDEZ'
+											when ri.column_name = 'aborto' then 'ABORTO'
+											when ri.column_name = 'parto_cesareo' then 'PARTO CESÁRIO'
+											when ri.column_name = 'parto_normal' then 'PARTO NORMAL'
+											when ri.column_name = 'exame_pre_op_investigacao_diag' then 'EXAMES E INVESTIGAÇÃO DIAGNÓSTICO'
+											when ri.column_name = 'hipotese_diagnostica_pre_op' then 'HIPÓTESE DIAGNÓSTICA'
+											when ri.column_name = 'tipo_saida_tiss' then 'TIPO DE SAÍDA TISS'
+											when ri.column_name = 'cod_fatura_consulta' then 'FATURA CONSULTA (CÓDIGO)'
+											when ri.column_name = 'gratuidade' then 'GRATUIDADE'
+											when ri.column_name = 'subsidio_pref' then 'SUBSÍDIO PREF.'
+											when ri.column_name = 'cod_cid_notificacao' then 'CID NOTIFICAÇÃO (CÓDIGO)'
+											when ri.column_name = 'data_hora_reabertura' then 'DATA HORA REABERTURA'
+											when ri.column_name = 'exportada_cih_alta' then 'EXPORTADA CIH ALTA'
+											when ri.column_name = 'dias_atestado' then 'DIAS ATESTADO'
+											when ri.column_name = 'cod_usuario_alterou_situacao' then 'USUÁRIO ALTEROU SITUAÇÃO (CÓDIGO)'
+											when ri.column_name = 'cod_medico_solicitante' then 'MÉDICO SOLICITANTE (CÓDIGO)'
+											when ri.column_name = 'data_inicio_ultima_prescricao' then 'DATA INÍCIO ÚLTIMA PRESCRIÇÃO'
+											when ri.column_name = 'hora_inicio_ultima_prescricao' then 'HORA INÍCIO ÚLTIMA PRESCRIÇÃO'
+											when ri.column_name = 'data_fim_ultima_prescricao' then 'DATA FIM ÚLTIMA PRESCRIÇÃO'
+											when ri.column_name = 'hora_fim_ultima_prescricao' then 'HORA FIM ÚLTIMA PRESCRIÇÃO'
+											when ri.column_name = 'status_ultima_prescricao' then 'STATUS ÚLTIMA PRESCRIÇÃO'
+											when ri.column_name = 'codigo_ultima_prescricao' then 'CÓDIGO ÚLTIMA PRESCRIÇÃO'
+											when ri.column_name = 'gerada_a_partir_fia_amb' then 'GERADA A PARTIR DA FIA'
+											when ri.column_name = 'exportado_ach' then 'EXPORTADO ACH'
+											when ri.column_name = 'data_ultima_troca_unidade' then 'DATA ÚLTIMA TROCA DE UNIDADE'
+											when ri.column_name = 'status_ultima_prescricao_enf' then 'STATUS ÚLTIMA PRESCRIÇÃO ENF'
+											when ri.column_name = 'codigo_ultima_prescricao_enf' then 'CÓDIGO ÚLTIMA PRESCRIÇÃO ENF'
+											when ri.column_name = 'exportada_apac_fia' then 'EXPORTADO APAC'
+											when ri.column_name = 'reservar_leito_origem' then 'RESERVAR LEITO ORIGEM'
+											when ri.column_name = 'valor_total_repasse_prestador' then 'VALOR TOTAL REPASSE PRESTADOR'
+											when ri.column_name = 'rncomalta' then 'RN COM ALTA'
+											when ri.column_name = 'data_entrada_unidade' then 'DATA ENTRADA UNIDADE'
+											when ri.column_name = 'hora_entrada_unidade' then 'HORA ENTRADA UNIDADE'
+											when ri.column_name = 'proveniente_de' then 'PROVENIENTE DE'
+											when ri.column_name = 'status_ultima_prescricao_nut' then 'STATUS ÚLTIMA PRESCRIÇÃO NUT'
+											when ri.column_name = 'codigo_ultima_prescricao_nut' then 'CÓDIGO ÚLTIMA PRESCRIÇÃO NUT'
+											when ri.column_name = 'passo_envio_aghos' then 'PASSO ENVIO AGHOS'
+											when ri.column_name = 'autorizado_aghos' then 'AUTORIZADO AGHOS'
+											when ri.column_name = 'situacao_aghos' then 'SITUAÇÃO AGHOS'
+											when ri.column_name = 'observacoes_aghos' then 'OBSERVAÇÕES AGHOS'
+											when ri.column_name = 'transferencia_aghos' then 'TRANSFERÊNCIA AGHOS'
+											when ri.column_name = 'lanca_taxas_conta' then 'LANÇA TAXAS CONTA'
+											when ri.column_name = 'cod_cta_receber_pagar_pacote' then 'CONTA RECEBER PAGAR PACOTE (CÓDIGO)'
+											when ri.column_name = 'data_hora_ini_ult_prescricao' then 'DATA INÍCIO ÚLTIMA PRESCRIÇÃO'
+											when ri.column_name = 'data_hora_fim_ult_prescricao' then 'DATA FIM ÚLTIMA PRESCRIÇÃO'
+											when ri.column_name = 'data_hora_ini_ult_prescr_nut' then 'DATA INÍCIO ÚLTIMA PRESCRIÇÃO NUT'
+											when ri.column_name = 'data_hora_fim_ult_prescr_nut' then 'DATA FIM ÚLTIMA PRESCRIÇÃO NUT'
+											when ri.column_name = 'data_hora_ini_ult_prescr_enf' then 'DATA INÍCIO ÚLTIMA PRESCRIÇÃO ENF'
+											when ri.column_name = 'data_hora_fim_ult_prescr_enf' then 'DATA FIM ÚLTIMA PRESCRIÇÃO ENF'
+											when ri.column_name = 'cod_grau_parentesco_resp_pag' then 'GRAU PARENTESCO RESP PAG (CÓDIGO)'
+											when ri.column_name = 'cod_cbo_resp_pag' then 'CBO RESP PAG (CÓDIGO)'
+											when ri.column_name = 'cod_tp_documento_resp_pag' then 'TIPO DOCUMENTO RESP PAG (CÓDIGO)'
+											when ri.column_name = 'doc_responsavel_pag' then 'DOCUMENTO RESP PAG'
+											when ri.column_name = 'cod_tp_documento_2_resp_pag' then 'TIPO DOCUMENTO 2 RESP PAG (CÓDIGO)'
+											when ri.column_name = 'doc_responsavel_2_resp_pag' then 'DOCUMENTO 2 RESP PAG'
+											when ri.column_name = 'obs_resp_pag' then 'OBS RESP PAG'
+											when ri.column_name = 'fone_resp_pag' then 'FONE RESP PAG'
+											when ri.column_name = 'cod_logradouro_resp_pag' then 'LOGRADOURO RESP PAG (CÓDIGO)'
+											when ri.column_name = 'cod_tp_endereco_resp_pag' then 'TIPO ENDEREÇO RESP PAG (CÓDIGO)'
+											when ri.column_name = 'num_end_resp_pag' then 'NÚM ENDEREÇO RESP PAG'
+											when ri.column_name = 'complemento_resp_pag' then 'COMPLEMENTO RESP PAG'
+											when ri.column_name = 'referencia_resp_pag' then 'REFERÊNCIA RESP PAG'
+											when ri.column_name = 'pode_receber_ligacao_resp_pag' then 'PODE RECEBER LIGAÇÃO RESP PAG'
+											when ri.column_name = 'saida_temporaria' then 'SAÍDA TEMPORÁRIA'
+											when ri.column_name = 'gera_requisicao_leito' then 'GERA REQUISIÇÃO LEITO'
+											when ri.column_name = 'lanca_diarias_alta' then 'LANÇA DIÁRIAS ALTA'
+											when ri.column_name = 'obito_mulher' then 'ÓBITO MULHER'
+											when ri.column_name = 'qtd_obito_rn_precoce' then 'QTD ÓBITO RN PRECOCE'
+											when ri.column_name = 'qtd_obito_rn_tardio' then 'QTD ÓBITO RN TARDIO'
+											when ri.column_name = 'tipo_consulta_tiss' then 'TIPO CONSULTA TISS'
+											when ri.column_name = 'cod_paciente_spp' then 'PACIENTE SPP (CÓDIGO)'
+											when ri.column_name = 'paciente_spp_unidade' then 'UNIDADE PACIENTE SPP (CÓDIGO)'
+											when ri.column_name = 'lanca_taxas_conta_sai_unidade' then 'LANÇA TAXAS CONTA SAÍDA UNIDADE'
+											when ri.column_name = 'cod_ficha_escala_risco' then 'FICHA ESCALA RISCO (CÓDIGO)'
+											when ri.column_name = 'descricao_atestado' then 'DESCRIÇÃO ATESTADO'
+											when ri.column_name = 'atendimento_rn' then 'ATENDIMENTO RN'
+											when ri.column_name = 'hora_inicio_atestado' then 'HORA INÍCIO ATESTADO'
+											when ri.column_name = 'hora_fim_atestado' then 'HORA FIM ATESTADO'
+											when ri.column_name = 'diretorio_atestado' then 'DIRETÓRIO ATESTADO'
+											when ri.column_name = 'data_hora_criacao_atestado' then 'DATA CRIAÇÃO ATESTADO'
+											when ri.column_name = 'aplica_pacote_deposito' then 'APLICA PACOTE DEPÓSITO'
+											when ri.column_name = 'cod_equipe_medica' then 'EQUIPE MÉDICA (CÓDIGO)'
+											when ri.column_name = 'utiliza_dados_juridicos' then 'UTILIZA DADOS JURÍDICOS'
+											when ri.column_name = 'origem' then 'ORIGEM'
+											when ri.column_name = 'cod_contratado_solicitante' then 'CONTRATADO SOLICITANTE (CÓDIGO)'
+											when ri.column_name = 'cod_contratado_executante' then 'CONTRATADO EXECUTANTE (CÓDIGO)'
+											when ri.column_name = 'cod_ficha_fila' then 'FICHA FILA (CÓDIGO)'
+											when ri.column_name = 'alterou_cid_laudo_aih' then 'ALTEROU CID LAUDO AIH'
+											when ri.column_name = 'alterou_procedimento_laudo_aih' then 'ALTEROU PROCEDIMENTO LAUDO AIH'
+											when ri.column_name = 'em_isolamento' then 'EM ISOLAMENTO'
+											when ri.column_name = 'motivo_isolamento' then 'MOTIVO ISOLAMENTO'
+											when ri.column_name = 'data_inicio_isolamento' then 'DATA INÍCIO ISOLAMENTO'
+											when ri.column_name = 'data_final_isolamento' then 'DATA FINAL ISOLAMENTO'
+											when ri.column_name = 'cod_hospital' then 'HOSPITAL (CÓDIGO)'
+											when ri.column_name = 'cod_pre_classificacao_risco' then 'CLASSIFICAÇÃO RISCO (CÓDIGO)'
+											when ri.column_name = 'laboratorio_responsavel_coleta' then 'LABORATÓRIO RESP. COLETA'
+											when ri.column_name = 'cod_situacao_atendimento_old' then 'SITUAÇÃO ATENDIMENTO ANT. (CÓDIGO)'
+											when ri.column_name = 'cod_autorizacao_previa' then 'AUTORIZAÇÃO PRÉVIA (CÓDIGO)'
+											when ri.column_name = 'cod_motivo_isolamento' then 'MOTIVO ISOLAMENTO (CÓDIGO)'
+											when ri.column_name = 'logradouro_resp_pag' then 'LOGRADOURO RESP PAG'
+											when ri.column_name = 'municipio_resp_pag' then 'MUNICÍPIO RESP PAG'
+											when ri.column_name = 'bairro_resp_pag' then 'BAIRRO RESP PAG'
+											when ri.column_name = 'cep_resp_pag' then 'CEP RESP PAG'
+											when ri.column_name = 'uf_resp_pag' then 'UF RESP PAG'
+											when ri.column_name = 'alterou_tipo_atend' then 'ALTEROU TIPO ATEND.'
+											when ri.column_name = 'atendimento_em_edicao_ou_atendido' then 'ATEND. EM EDIÇÃO OU ATENDIDO'
+											when ri.column_name = 'tp_logradouro_resp_pag' then 'TIPO LOGRADOURO RESP PAG'
+											when ri.column_name = 'gravou_fluxo_atend' then 'GRAVOU FLUXO ATEND.'
+											when ri.column_name = 'data_hora_fim_espera' then 'DATA FIM ESPERA'
+											when ri.column_name = 'data_hora_fim_obs' then 'DATA FIM OBS'
+											when ri.column_name = 'motivo_alt_dt_atend' then 'MOTIVO ALTERAÇÃO DATA INÍCIO'
+											else ri.column_name
+										end 
+									) 
+							);
+					end if;
+					insert into util.controles_logs
+						(
+							cod_aplicacao,
+							tp_tabela,
+							nm_tabela,
+							campo,
+							informacao_adicional,
+							inf_antes,
+							inf_depois,
+							acao_realizada,
+							username
+						)
+					values
+						(
+							(select id_aplicacao from conf.aplicacoes where sigla = 'SIGH' limit 1),
+							9,
+							'Fia',
+							lColumnName,
+							'Atend: ' || cast(new.numero_atendimento as text) || ' Pac: ' || lNmPaciente,
+							oldValue,
+							newValue,
+							'ALTERAÇÃO',
+							(select upper(current_user))
+						);
+				END IF;
+		    END IF;
+		END LOOP;
+	elsif TG_OP = 'DELETE' then
+		insert into util.controles_logs
+			(
+				cod_aplicacao,
+				tp_tabela,
+				nm_tabela,
+				campo,
+				informacao_adicional,
+				inf_antes,
+				inf_depois,
+				acao_realizada,
+				username
+			)
+		values
+			(
+				(select id_aplicacao from conf.aplicacoes where sigla = 'SIGH' limit 1),
+				9,
+				'Fia',
+				'',
+				'Atend: ' || cast(old.numero_atendimento as text) || ' Pac: ' || (select nm_paciente from sigh.pacientes where id_paciente = old.cod_paciente),
+				'',
+				'',
+				'EXCLUSÃO',
+				(select upper(current_user))
+			);
+	end if;
+
+	if TG_OP = 'DELETE' then
+		return old;
+	else
+		return new;
+	end if;
+
+end;
+
+$BODY$
+  LANGUAGE plpgsql VOLATILE
+  COST 100;
+ALTER FUNCTION sigh.f_controle_logs_ficha_amb_int()
+  OWNER TO hd;
+GRANT EXECUTE ON FUNCTION sigh.f_controle_logs_ficha_amb_int() TO hd;
+GRANT EXECUTE ON FUNCTION sigh.f_controle_logs_ficha_amb_int() TO hd_backup;
+GRANT EXECUTE ON FUNCTION sigh.f_controle_logs_ficha_amb_int() TO hd_login;
+GRANT EXECUTE ON FUNCTION sigh.f_controle_logs_ficha_amb_int() TO public;
+GRANT EXECUTE ON FUNCTION sigh.f_controle_logs_ficha_amb_int() TO admin;
+GRANT EXECUTE ON FUNCTION sigh.f_controle_logs_ficha_amb_int() TO consultas;
+GRANT EXECUTE ON FUNCTION sigh.f_controle_logs_ficha_amb_int() TO hd_suporte;
