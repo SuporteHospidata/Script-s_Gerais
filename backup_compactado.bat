@@ -1,5 +1,4 @@
---Backup e compactação do mesmo é necessário ter os executaveis 7z e 7zFM ( Tanto na pasta sistemasHD quanto na pasta onde serão armazenados os backups) 
-que estão localizados nesta pasta : \\HDSERVER13\público\willian\backup bat
+
 
 set PGPASSWORD=s@tt30hd2013
 set HOST=XXX.XXX.X.XXX --IP
@@ -8,8 +7,6 @@ set CLIENT=bdXXXX --BASE
 set DIR_OUT=XXXXXX --DIR onde backp sera armazenados
 rem ------------------------------------------------------------------------------------------------------------------------------------------
 
-rem ------Backup com Util---------------------
-rem C:\SistemasHD\util.exe -B C:\bkp
 
 rem -----------backup direto pg_dump --------
 rem -- 
