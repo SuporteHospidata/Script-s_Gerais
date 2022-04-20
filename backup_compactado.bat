@@ -13,10 +13,9 @@ rem --
 
 cd C:\sistemashd
 pg_dumpall.exe -h %HOST% -p %PORT% -U hd_suporte -v -g > %DIR_OUT%\Usuarios.sql
-pause
+
 pg_dump.exe -h %HOST% -p %PORT% -U hd_suporte -v -C %CLIENT% > %DIR_OUT%\Backup%CLIENT%%date:~6,4%%date:~3,2%%date:~0,2%.sql
-pause
+
 7z.exe a %DIR_OUT%\Backup%CLIENT%%date:~6,4%%date:~3,2%%date:~0,2%.zip %DIR_OUT%\*.sql
-pause
 del "%DIR_OUT%\*.sql"
 pause
