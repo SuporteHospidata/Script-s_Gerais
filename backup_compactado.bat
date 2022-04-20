@@ -11,6 +11,7 @@ rem ----------------------------------------------------------------------------
 rem -----------backup direto pg_dump --------
 rem -- 
 
+cd C:\sistemashd
 pg_dumpall.exe -h %HOST% -p %PORT% -U hd_suporte -v -g > %DIR_OUT%\Usuarios.sql
 pause
 pg_dump.exe -h %HOST% -p %PORT% -U hd_suporte -v -C %CLIENT% > %DIR_OUT%\Backup%CLIENT%%date:~6,4%%date:~3,2%%date:~0,2%.sql
