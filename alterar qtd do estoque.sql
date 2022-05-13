@@ -10,3 +10,4 @@ begin;
 update sigh.estoques_produtos set qtd_unid_consumo = 36.500000000000000 where cod_produto = 1301 and cod_estoque = 81 -- atualiza o estoque do produto
 end;
 commit;
+
