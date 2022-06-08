@@ -1,0 +1,26 @@
+CREATE or replace function sigh.truncate_tabelas_logs()
+returns integer
+LANGUAGE plpgsql
+as $f$
+
+
+declare
+total integer DEFAULT 0;
+num_of_days integer DEFAULT 10;
+BEGIN
+delete FROM auditoria.log_tabelas where data_hora_criacao <= now() - INTERVAL '1 DAY' * num_of_days ;
+delete FROM util.controles_logs where data_hora_criacao <= now() - INTERVAL '1 DAY' * num_of_days ;
+truncate table auditoria.trilha_log_bkp;
+return 1;
+exception
+when others then
+
+
+--- GET STACKED DIAGNOSTICS err_context = PG_EXCEPTION_CONTEXT;
+RAISE INFO 'Error Name:%',SQLERRM;
+RAISE INFO 'Error State:%', SQLSTATE;
+return -1;
+
+
+
+end; $f$;
